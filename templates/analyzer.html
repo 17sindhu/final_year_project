@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Sentiment Analyzer — RK Sentiment{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-title">Sentiment Analyzer</div>
+  <div class="page-subtitle">Enter a Romanized Kannada product review to classify its sentiment.</div>
+</div>
+
+<div class="two-col">
+
+  <!-- LEFT: Input -->
+  <div class="two-col-left">
+
+    <div class="form-group">
+      <label class="form-label">Review Text</label>
+      <textarea id="reviewText" class="form-control" rows="6"
+        placeholder="Enter a Romanized Kannada product review here...
+e.g. product tumba chennagide delivery super fast aagidhe"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Select Model</label>
+      <select id="modelSelect" class="form-control" onchange="updateModelInfo()">
+        <option value="SVM">SVM — Machine Learning</option>
+        <option value="BiLSTM">BiLSTM — Deep Learning</option>
+        <option value="mBERT">mBERT — Transformer</option>
+      </select>
+      <div class="model-info-card" id="modelInfoCard">
+        <div class="model-info-name" id="modelName">SVM</div>
+        <div class="model-info-desc" id="modelDesc">TF-IDF feature vectors with Support Vector Machine classifier</div>
+        <div class="model-info-meta">
+          <span class="meta-pill" id="modelAcc">Accuracy: 77.68%</span>
+          <span class="meta-pill" id="modelSpeed">Speed: Fast</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-full" id="predictBtn" onclick="predict()">
+      Predict Sentiment
+    </button>
+
+    <hr class="divider">
+
+    <!-- Pipeline -->
+    <span class="section-label" style="margin-top:0">Preprocessing Pipeline</span>
+    <div class="pipeline-steps">
+      <div class="pipe-step"><div class="pipe-num">1</div><div class="pipe-title">Lowercase</div><div class="pipe-desc">All text lowercased</div></div>
+      <div class="pipe-step"><div class="pipe-num">2</div><div class="pipe-title">Clean</div><div class="pipe-desc">Remove URLs, punctuation</div></div>
+      <div class="pipe-step"><div class="pipe-num">3</div><div class="pipe-title">Stopwords</div><div class="pipe-desc">Remove function words</div></div>
+      <div class="pipe-step"><div class="pipe-num">4</div><div class="pipe-title">Normalize</div><div class="pipe-desc">Dictionary mapping</div></div>
+      <div class="pipe-step"><div class="pipe-num">5</div><div class="pipe-title">Tokenize</div><div class="pipe-desc">Split into tokens</div></div>
+      <div class="pipe-step"><div class="pipe-num">6</div><div class="pipe-title">Features</div><div class="pipe-desc">TF-IDF / Embed / WordPiece</div></div>
+      <div class="pipe-step"><div class="pipe-num">7</div><div class="pipe-title">Classify</div><div class="pipe-desc">Output probabilities</div></div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: Result -->
+  <div class="two-col-right">
+
+    <!-- Placeholder -->
+    <div class="placeholder" id="resultPlaceholder">
+      <div class="placeholder-icon">&#9675;</div>
+      <div class="placeholder-text">Your prediction result will appear here.</div>
+    </div>
+
+    <!-- Result panel (hidden until prediction) -->
+    <div id="resultPanel" style="display:none">
+
+      <div class="result-panel" id="resultCard">
+        <div class="card-label">Sentiment</div>
+        <div class="result-sentiment" id="resultLabel">—</div>
+        <div class="result-conf" id="resultConf">—</div>
+        <hr class="result-divider">
+
+        <!-- Probability bars -->
+        <div class="card-label">Class Probabilities</div>
+        <div class="prob-bars">
+          <div class="prob-row">
+            <div class="prob-label">Positive</div>
+            <div class="prob-track"><div class="prob-fill" id="barPos" style="width:0%;background:#10b981"></div></div>
+            <div class="prob-val" id="valPos">0%</div>
+          </div>
+          <div class="prob-row">
+            <div class="prob-label">Negative</div>
+            <div class="prob-track"><div class="prob-fill" id="barNeg" style="width:0%;background:#ef4444"></div></div>
+            <div class="prob-val" id="valNeg">0%</div>
+          </div>
+          <div class="prob-row">
+            <div class="prob-label">Neutral</div>
+            <div class="prob-track"><div class="prob-fill" id="barNeu" style="width:0%;background:#f59e0b"></div></div>
+            <div class="prob-val" id="valNeu">0%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preprocessing detail -->
+      <div class="card" id="preprocCard" style="margin-top:0">
+        <div class="card-label">Preprocessing Details</div>
+        <div style="font-size:0.82rem;color:#374151;line-height:1.8">
+          <div><strong>Original:</strong> <code id="origText">—</code></div>
+          <div><strong>Normalized:</strong> <code id="cleanText">—</code></div>
+          <div><strong>Tokens:</strong> <span id="tokenList" style="color:#64748b">—</span></div>
+        </div>
+      </div>
+
+      <!-- Interpretation -->
+      <div class="card" id="interpCard" style="margin-top:0">
+        <div class="card-label">Interpretation</div>
+        <div id="interpText" style="font-size:0.84rem;color:#475569;line-height:1.7"></div>
+      </div>
+
+      <!-- Aspect Analysis -->
+      <div class="card" id="aspectCard" style="margin-top:0;display:none">
+        <div class="card-label">Aspect Analysis</div>
+        <div id="aspectGrid" style="display:flex;flex-direction:column;gap:0.5rem;margin-top:0.4rem"></div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MODEL_INFO = {
+  "SVM":    { name:"SVM",    desc:"TF-IDF feature vectors with Support Vector Machine classifier", acc:"77.68%", speed:"Fast" },
+  "BiLSTM": { name:"BiLSTM", desc:"Bidirectional LSTM with trainable embedding layers",            acc:"76.54%", speed:"Medium" },
+  "mBERT":  { name:"mBERT",  desc:"bert-base-multilingual-cased fine-tuned for classification",    acc:"78.00%", speed:"Slower" },
+};
+
+const INTERP = {
+  Positive: "The model detected positive sentiment — the reviewer appears satisfied with the product.",
+  Negative: "The model detected negative sentiment — the review likely contains a complaint or dissatisfaction.",
+  Neutral:  "The model detected neutral sentiment — no strong positive or negative polarity was found.",
+};
+
+function updateModelInfo() {
+  const m = MODEL_INFO[document.getElementById("modelSelect").value];
+  document.getElementById("modelName").textContent  = m.name;
+  document.getElementById("modelDesc").textContent  = m.desc;
+  document.getElementById("modelAcc").textContent   = "Accuracy: " + m.acc;
+  document.getElementById("modelSpeed").textContent = "Speed: " + m.speed;
+}
+
+async function predict() {
+  const text  = document.getElementById("reviewText").value.trim();
+  const model = document.getElementById("modelSelect").value;
+  if (!text) { showToast("Please enter a review first.", "error"); return; }
+
+  const btn = document.getElementById("predictBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Analysing...';
+
+  try {
+    const res  = await fetch("/api/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, model }),
+    });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, "error"); return; }
+
+    renderResult(data);
+  } catch(e) {
+    showToast("Server error: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = "Predict Sentiment";
+  }
+}
+
+function renderResult(d) {
+  // Show panel, hide placeholder
+  document.getElementById("resultPlaceholder").style.display = "none";
+  document.getElementById("resultPanel").style.display       = "block";
+
+  const col = sentimentColor(d.label);
+  const bg  = sentimentBg(d.label);
+  const brd = sentimentBorder(d.label);
+
+  // Result card
+  const card = document.getElementById("resultCard");
+  card.style.background   = bg;
+  card.style.borderColor  = brd + "60";
+
+  document.getElementById("resultLabel").textContent = d.label;
+  document.getElementById("resultLabel").style.color = col;
+  document.getElementById("resultConf").textContent  =
+    `Confidence: ${d.confidence}%  •  Model: ${d.model}`;
+
+  // Prob bars
+  const p = d.proba;
+  setBar("Pos", p.Positive, "#10b981");
+  setBar("Neg", p.Negative, "#ef4444");
+  setBar("Neu", p.Neutral,  "#f59e0b");
+
+  // Preprocessing
+  document.getElementById("origText").textContent  = d.clean_text ? document.getElementById("reviewText").value.trim() : "—";
+  document.getElementById("cleanText").textContent = d.clean_text || "—";
+  document.getElementById("tokenList").textContent = d.tokens ? d.tokens.join(", ") : "—";
+
+  // Interpretation
+  document.getElementById("interpText").textContent = INTERP[d.label] || "";
+
+  // Aspect analysis
+  const aspectCard = document.getElementById("aspectCard");
+  const aspectGrid = document.getElementById("aspectGrid");
+  if (d.aspects && Object.keys(d.aspects).length > 0) {
+    aspectCard.style.display = "block";
+    aspectGrid.innerHTML = Object.entries(d.aspects).map(([aspect, data]) => {
+      const col = data.sentiment === "Positive" ? "#10b981"
+                : data.sentiment === "Negative" ? "#ef4444" : "#f59e0b";
+      const bg  = data.sentiment === "Positive" ? "#f0fdf4"
+                : data.sentiment === "Negative" ? "#fef2f2" : "#fffbeb";
+      return `<div style="display:flex;align-items:center;gap:0.75rem;
+                           background:${bg};border-radius:7px;padding:0.6rem 0.9rem">
+        <span style="font-size:0.82rem;font-weight:700;color:#374151;width:120px">${aspect}</span>
+        <span style="background:${col};color:#fff;border-radius:4px;
+                     padding:2px 9px;font-size:0.74rem;font-weight:700">${data.sentiment}</span>
+        <span style="font-size:0.74rem;color:#64748b">${data.keywords.join(", ")}</span>
+      </div>`;
+    }).join("");
+  } else {
+    aspectCard.style.display = "none";
+  }
+}
+
+function setBar(id, pct, color) {
+  document.getElementById("bar" + id).style.width       = pct + "%";
+  document.getElementById("bar" + id).style.background  = color;
+  document.getElementById("val" + id).textContent       = pct + "%";
+}
+</script>
+{% endblock %}

@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+{% block title %}Product Insights — RK Sentiment{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-title">Product Insights</div>
+  <div class="page-subtitle">Upload a dataset to get deep aspect-based analysis, failure reasons, and product recommendation.</div>
+</div>
+
+<!-- UPLOAD -->
+<span class="section-label">Upload Dataset</span>
+<div style="display:grid;grid-template-columns:1.4fr 1fr;gap:1rem;align-items:start">
+  <div>
+    <div class="upload-zone" id="uploadZone"
+         onclick="document.getElementById('fileIn').click()"
+         ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="handleDrop(event)">
+      <div class="upload-icon">&#8593;</div>
+      <div class="upload-title" id="uploadTitle">Drag & drop or click to upload CSV / Excel</div>
+      <div class="upload-sub" id="uploadSub">Supports .csv, .xlsx, .xls</div>
+      <input type="file" id="fileIn" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFile(event)">
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:0.6rem">
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Review Column</label>
+      <select id="colSel" class="form-control">
+        <option>— upload file first —</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Model</label>
+      <select id="modelSel" class="form-control">
+        <option value="SVM">SVM — Machine Learning</option>
+        <option value="BiLSTM">BiLSTM — Deep Learning</option>
+        <option value="mBERT">mBERT — Transformer</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-full" id="runBtn" onclick="runInsights()">
+      Generate Insights
+    </button>
+  </div>
+</div>
+
+<!-- PROGRESS -->
+<div id="progWrap" style="display:none;margin-top:0.75rem">
+  <div class="progress-wrap"><div class="progress-bar" id="progBar" style="width:0%"></div></div>
+  <div style="font-size:0.76rem;color:#94a3b8;margin-top:4px" id="progTxt">Analysing...</div>
+</div>
+
+<hr class="divider">
+
+<!-- RESULTS -->
+<div id="insightsSection" style="display:none">
+
+  <!-- VERDICT BANNER -->
+  <div id="verdictBanner" class="verdict-banner">
+    <div class="verdict-label">Product Recommendation</div>
+    <div class="verdict-status" id="verdictStatus"></div>
+    <div class="verdict-sub"   id="verdictSub"></div>
+  </div>
+
+  <!-- OVERALL STATS -->
+  <div class="sum-grid" id="statsGrid"></div>
+
+  <hr class="divider">
+
+  <!-- ASPECT CARDS -->
+  <span class="section-label">Aspect-wise Sentiment Analysis</span>
+  <div id="aspectCards" style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;margin-bottom:1rem"></div>
+
+  <!-- ASPECT CHART -->
+  <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:1rem;margin-bottom:1rem">
+    <div class="chart-wrap">
+      <div class="chart-title">Aspect Sentiment Breakdown</div>
+      <canvas id="aspectChart" height="280"></canvas>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Most Complained vs Most Praised</div>
+      <canvas id="compareChart" height="280"></canvas>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- TOP POSITIVE & NEGATIVE FACTORS -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+    <div class="card">
+      <div class="card-label" style="color:#10b981">Top Positive Factors</div>
+      <div id="posFactors" style="margin-top:0.5rem;display:flex;flex-direction:column;gap:0.5rem"></div>
+    </div>
+    <div class="card">
+      <div class="card-label" style="color:#ef4444">Top Negative Factors</div>
+      <div id="negFactors" style="margin-top:0.5rem;display:flex;flex-direction:column;gap:0.5rem"></div>
+    </div>
+  </div>
+
+  <!-- INSIGHT REASONS -->
+  <span class="section-label">Key Insights</span>
+  <div id="reasonCards" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem"></div>
+
+  <hr class="divider">
+
+  <!-- OVERALL SENTIMENT CHARTS -->
+  <span class="section-label">Overall Sentiment Distribution</span>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1rem">
+    <div class="chart-wrap">
+      <div class="chart-title">Sentiment Donut</div>
+      <canvas id="donutChart" height="200"></canvas>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Sentiment Bar</div>
+      <canvas id="barChart" height="200"></canvas>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Positive vs Negative</div>
+      <canvas id="pvnChart"  height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- PREVIEW TABLE -->
+  <span class="section-label">Predicted Results (first 10 rows)</span>
+  <div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:1rem">
+    <table class="data-table">
+      <thead><tr><th>Review</th><th>Sentiment</th><th>Confidence</th></tr></thead>
+      <tbody id="previewBody"></tbody>
+    </table>
+  </div>
+
+  <!-- DOWNLOADS -->
+  <span class="section-label">Download</span>
+  <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
+    <button class="btn btn-secondary" onclick="dlFile('csv')">Download CSV</button>
+    <button class="btn btn-secondary" onclick="dlFile('report')">Download Report (.txt)</button>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _file = null, _result = null;
+let _donut, _bar, _pvn, _aspect, _compare;
+const HINTS = ["review","text","comment","feedback","description","opinion","content"];
+
+// ── File handling ─────────────────────────────────────────────────────────────
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById("uploadZone").classList.remove("drag-over");
+  if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+}
+function handleFile(e) { if (e.target.files[0]) processFile(e.target.files[0]); }
+
+function processFile(file) {
+  _file = file;
+  document.getElementById("uploadTitle").textContent = file.name;
+  document.getElementById("uploadSub").textContent   = `${(file.size/1024).toFixed(1)} KB`;
+
+  if (!file.name.endsWith(".csv")) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines   = e.target.result.trim().split("\n");
+    const headers = lines[0].split(",").map(h => h.replace(/"/g,"").trim());
+    const sel     = document.getElementById("colSel");
+    sel.innerHTML = "";
+    let ai = -1;
+    headers.forEach((h,i) => {
+      const o = document.createElement("option");
+      o.value = h; o.textContent = h; sel.appendChild(o);
+      if (HINTS.includes(h.toLowerCase()) && ai < 0) ai = i;
+    });
+    if (ai >= 0) sel.selectedIndex = ai;
+  };
+  reader.readAsText(file);
+}
+
+// ── Run ───────────────────────────────────────────────────────────────────────
+async function runInsights() {
+  if (!_file) { showToast("Upload a file first.", "error"); return; }
+
+  const btn = document.getElementById("runBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Analysing...';
+  document.getElementById("progWrap").style.display = "block";
+  animProg();
+
+  const form = new FormData();
+  form.append("file",   _file);
+  form.append("model",  document.getElementById("modelSel").value);
+  form.append("column", document.getElementById("colSel").value);
+
+  try {
+    const res  = await fetch("/api/bulk", { method:"POST", body:form });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, "error"); return; }
+    _result = data;
+    renderInsights(data);
+    showToast("Insights generated!", "success");
+  } catch(e) {
+    showToast("Error: " + e.message, "error");
+  } finally {
+    btn.disabled = false; btn.innerHTML = "Generate Insights";
+    document.getElementById("progBar").style.width = "100%";
+    setTimeout(() => {
+      document.getElementById("progWrap").style.display = "none";
+      document.getElementById("progBar").style.width = "0%";
+    }, 600);
+  }
+}
+
+let _pi = null;
+function animProg() {
+  let w = 0; clearInterval(_pi);
+  _pi = setInterval(() => {
+    w = Math.min(w + Math.random()*7, 88);
+    document.getElementById("progBar").style.width = w + "%";
+    document.getElementById("progTxt").textContent = `Analysing... ${Math.round(w)}%`;
+  }, 250);
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderInsights(d) {
+  const sec = document.getElementById("insightsSection");
+  sec.style.display = "block";
+  sec.scrollIntoView({ behavior:"smooth" });
+
+  // Verdict
+  const vb = document.getElementById("verdictBanner");
+  vb.style.borderColor = d.verdict_color + "40";
+  vb.style.background  = d.verdict_bg;
+  document.getElementById("verdictStatus").textContent = d.verdict;
+  document.getElementById("verdictStatus").style.color = d.verdict_color;
+  document.getElementById("verdictSub").textContent =
+    `${d.total} reviews  •  Model: ${d.model}  •  Positive: ${d.pos_pct}%  Negative: ${d.neg_pct}%  Neutral: ${d.neu_pct}%`;
+
+  // Stats
+  document.getElementById("statsGrid").innerHTML = [
+    [d.total, "Total Reviews"], [d.pos, "Positive"],
+    [d.neg,   "Negative"],      [d.neu, "Neutral"],
+    [d.pos_pct+"%","Pos Rate"], [d.neg_pct+"%","Neg Rate"],
+  ].map(([v,l]) =>
+    `<div class="stat-card"><div class="stat-val">${v}</div><div class="stat-lbl">${l}</div></div>`
+  ).join("");
+
+  // Aspect cards
+  const asp = d.aspect_summary || {};
+  const ac  = document.getElementById("aspectCards");
+  ac.innerHTML = "";
+  if (Object.keys(asp).length === 0) {
+    ac.innerHTML = `<div class="card" style="grid-column:span 3;text-align:center;color:#94a3b8;font-size:0.84rem">
+      No strong aspect keywords detected in this dataset.</div>`;
+  } else {
+    Object.entries(asp).forEach(([aspect, a]) => {
+      const sc = a.overall === "Positive" ? "#10b981"
+               : a.overall === "Negative" ? "#ef4444" : "#f59e0b";
+      const sb = a.overall === "Positive" ? "#f0fdf4"
+               : a.overall === "Negative" ? "#fef2f2" : "#fffbeb";
+      ac.innerHTML += `
+      <div class="card" style="border-top:3px solid ${sc};padding:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+          <span style="font-size:0.88rem;font-weight:700;color:#0f172a">${a.icon} ${aspect}</span>
+          <span style="background:${sc};color:#fff;border-radius:5px;padding:2px 9px;
+                       font-size:0.72rem;font-weight:700">${a.overall}</span>
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.6rem">
+          <span style="font-size:0.73rem;background:#f0fdf4;color:#16a34a;border-radius:4px;padding:1px 7px;font-weight:600">
+            +${a.pos_pct}% positive</span>
+          <span style="font-size:0.73rem;background:#fef2f2;color:#dc2626;border-radius:4px;padding:1px 7px;font-weight:600">
+            -${a.neg_pct}% negative</span>
+        </div>
+        <div style="font-size:0.72rem;color:#94a3b8">${a.total} mention${a.total !== 1 ? "s" : ""} in reviews</div>
+        <!-- mini bar -->
+        <div style="margin-top:0.5rem">
+          <div style="height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;display:flex">
+            <div style="width:${a.pos_pct}%;background:#10b981;transition:width .5s"></div>
+            <div style="width:${a.neg_pct}%;background:#ef4444;transition:width .5s"></div>
+            <div style="width:${a.mix_pct||0}%;background:#f59e0b;transition:width .5s"></div>
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+
+  // Aspect chart (grouped bar)
+  if (_aspect) _aspect.destroy();
+  if (_compare) _compare.destroy();
+  const aspLabels = Object.keys(asp);
+  const posVals   = aspLabels.map(a => asp[a].pos_pct);
+  const negVals   = aspLabels.map(a => asp[a].neg_pct);
+
+  if (aspLabels.length > 0) {
+    _aspect = new Chart(document.getElementById("aspectChart"), {
+      type:"bar",
+      data:{ labels: aspLabels,
+        datasets:[
+          { label:"Positive %", data:posVals, backgroundColor:"#10b981", borderRadius:3 },
+          { label:"Negative %", data:negVals, backgroundColor:"#ef4444", borderRadius:3 },
+        ]
+      },
+      options:{
+        indexAxis:"y", plugins:{ legend:{ position:"bottom", labels:{font:{size:10},boxWidth:10} } },
+        scales:{ x:{ max:100, grid:{color:"#f1f5f9"}, ticks:{font:{size:9}} },
+                 y:{ grid:{display:false}, ticks:{font:{size:10}} } }
+      }
+    });
+
+    // Compare: most complained vs most praised
+    const rec  = d.recommendation || {};
+    const cmp  = [rec.most_praised, rec.most_complained].filter(Boolean);
+    const cVals= cmp.map(a => asp[a] ? (cmp.indexOf(a)===0 ? asp[a].pos_pct : asp[a].neg_pct) : 0);
+    _compare = new Chart(document.getElementById("compareChart"), {
+      type:"bar",
+      data:{ labels: cmp,
+        datasets:[{
+          data: cVals,
+          backgroundColor: cmp.map((_, i) => i===0?"#10b981":"#ef4444"),
+          borderRadius:4, borderWidth:0
+        }]
+      },
+      options:{
+        plugins:{ legend:{display:false} },
+        scales:{ y:{ max:100, title:{display:true,text:"%"}, grid:{color:"#f1f5f9"} },
+                 x:{ grid:{display:false} } }
+      }
+    });
+  }
+
+  // Positive & Negative factor bars
+  const rec = d.recommendation || {};
+  document.getElementById("posFactors").innerHTML =
+    (rec.top_positive || []).map(([a, pct]) =>
+      `<div style="display:flex;align-items:center;gap:0.6rem">
+        <span style="font-size:0.82rem;font-weight:600;color:#374151;width:130px">${asp[a]?.icon||""} ${a}</span>
+        <div style="flex:1;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:#10b981;border-radius:4px"></div></div>
+        <span style="font-size:0.76rem;font-weight:700;color:#10b981;width:36px">${pct}%</span>
+      </div>`
+    ).join("") || `<div style="font-size:0.82rem;color:#94a3b8">No strong positive aspects detected.</div>`;
+
+  document.getElementById("negFactors").innerHTML =
+    (rec.top_negative || []).map(([a, pct]) =>
+      `<div style="display:flex;align-items:center;gap:0.6rem">
+        <span style="font-size:0.82rem;font-weight:600;color:#374151;width:130px">${asp[a]?.icon||""} ${a}</span>
+        <div style="flex:1;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:#ef4444;border-radius:4px"></div></div>
+        <span style="font-size:0.76rem;font-weight:700;color:#ef4444;width:36px">${pct}%</span>
+      </div>`
+    ).join("") || `<div style="font-size:0.82rem;color:#94a3b8">No strong negative aspects detected.</div>`;
+
+  // Insight reasons
+  document.getElementById("reasonCards").innerHTML =
+    (rec.reasons || []).map(r => {
+      const col = r.type === "positive" ? "#10b981" : "#ef4444";
+      const bg  = r.type === "positive" ? "#f0fdf4" : "#fef2f2";
+      const pfx = r.type === "positive" ? "✓" : "✗";
+      return `<div style="background:${bg};border-left:3px solid ${col};border-radius:0 7px 7px 0;
+                           padding:0.65rem 1rem;font-size:0.84rem;color:#374151">
+        <strong style="color:${col}">${pfx} ${r.aspect}</strong> — ${r.text}
+      </div>`;
+    }).join("") || `<div style="font-size:0.82rem;color:#94a3b8">Run analysis to see insights.</div>`;
+
+  // Overall sentiment charts
+  if (_donut) _donut.destroy();
+  if (_bar)   _bar.destroy();
+  if (_pvn)   _pvn.destroy();
+
+  _donut = new Chart(document.getElementById("donutChart"), {
+    type:"doughnut",
+    data:{ labels:["Positive","Negative","Neutral"],
+      datasets:[{ data:[d.pos,d.neg,d.neu],
+        backgroundColor:["#10b981","#ef4444","#f59e0b"], borderWidth:0 }]
+    },
+    options:{ cutout:"58%",
+      plugins:{ legend:{ position:"bottom", labels:{font:{size:10},boxWidth:10} } } }
+  });
+
+  _bar = new Chart(document.getElementById("barChart"), {
+    type:"bar",
+    data:{ labels:["Positive","Negative","Neutral"],
+      datasets:[{ data:[d.pos,d.neg,d.neu],
+        backgroundColor:["#10b981","#ef4444","#f59e0b"],
+        borderRadius:4, borderWidth:0 }]
+    },
+    options:{ plugins:{legend:{display:false}},
+      scales:{ y:{grid:{color:"#f1f5f9"},ticks:{font:{size:10}}},
+               x:{grid:{display:false},ticks:{font:{size:10}}} } }
+  });
+
+  _pvn = new Chart(document.getElementById("pvnChart"), {
+    type:"doughnut",
+    data:{ labels:["Positive","Negative"],
+      datasets:[{ data:[d.pos_pct, d.neg_pct],
+        backgroundColor:["#10b981","#ef4444"], borderWidth:0 }]
+    },
+    options:{ cutout:"55%",
+      plugins:{ legend:{ position:"bottom", labels:{font:{size:10},boxWidth:10} } } }
+  });
+
+  // Preview table
+  const tb = document.getElementById("previewBody");
+  tb.innerHTML = (d.preview||[]).map(r => {
+    const lbl = r["Predicted Sentiment"];
+    const cls = lbl==="Positive"?"badge-pos":lbl==="Negative"?"badge-neg":"badge-neu";
+    const rev = String(r[d.col_used]||Object.values(r)[0]||"");
+    return `<tr>
+      <td>${rev.substring(0,80)}${rev.length>80?"…":""}</td>
+      <td><span class="badge ${cls}">${lbl}</span></td>
+      <td>${r["Confidence (%)"]||"—"}%</td>
+    </tr>`;
+  }).join("");
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+function dlFile(type) {
+  if (!_result) return;
+  const ts = new Date().toISOString().slice(0,19).replace(/[T:]/g,"_");
+  if (type==="csv")    downloadCSV(_result.csv, `analyzed_${ts}.csv`);
+  else                 downloadText(_result.report, `insights_report_${ts}.txt`);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}Home — RK Sentiment Analysis{% endblock %}
+
+{% block content %}
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-eyebrow">Final Year Engineering Project &bull; 2025–26</div>
+  <h1>Sentiment Analysis of Romanized<br>Kannada Product Reviews</h1>
+  <p>A comparative study of Machine Learning, Deep Learning, and Transformer models
+     for three-class sentiment classification on a novel 10,000-review annotated dataset
+     of code-mixed Romanized Kannada text.</p>
+  <div class="hero-meta">
+    <span>JSS Science &amp; Technology University, Mysuru</span>
+    <span>Dept. of Computer Science &amp; Engineering</span>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stat-grid">
+  <div class="stat-card"><div class="stat-val">10,000</div><div class="stat-lbl">Annotated Reviews</div></div>
+  <div class="stat-card"><div class="stat-val">15</div><div class="stat-lbl">Model Configs</div></div>
+  <div class="stat-card"><div class="stat-val">3</div><div class="stat-lbl">Architectures</div></div>
+  <div class="stat-card"><div class="stat-val">78.00%</div><div class="stat-lbl">Best Accuracy</div></div>
+  <div class="stat-card"><div class="stat-val">0.89</div><div class="stat-lbl">Cohen's Kappa</div></div>
+  <div class="stat-card"><div class="stat-val">3</div><div class="stat-lbl">Sentiment Classes</div></div>
+</div>
+
+<hr class="divider">
+
+<!-- ABSTRACT -->
+<span class="section-label">Abstract</span>
+<div class="card">
+  <p>Online product reviews from Karnataka buyers are routinely written in <strong>Romanized Kannada</strong>
+     — Kannada words typed in English letters rather than Unicode script. There is no agreed spelling
+     convention and the same word appears in 4–5 surface forms depending on the writer.</p>
+  <p style="margin-top:0.6rem">This paper presents a complete pipeline: a <strong>10,000-review annotated dataset</strong>
+     (Cohen kappa = 0.89), a hand-built phonetic normalization dictionary, and a controlled comparison
+     of 15 model configurations across ML, DL, and Transformer families. mBERT achieves
+     <strong>78.00% accuracy</strong> while SVM reaches <strong>77.68%</strong> at far lower cost.</p>
+  <div style="margin-top:0.8rem;padding-top:0.8rem;border-top:1px solid #f1f5f9;font-size:0.78rem;color:#64748b">
+    <strong>Keywords:</strong> Sentiment Analysis &bull; Romanized Kannada &bull; Code-Mixed NLP
+    &bull; mBERT &bull; BiLSTM &bull; TF-IDF &bull; Phonetic Normalization
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- DATASET -->
+<span class="section-label">Dataset Construction</span>
+<div style="display:flex;flex-direction:column;gap:0.6rem">
+  {% for num, title, body in [
+    ("1","Web Scraping","Raw reviews scraped from Indian e-commerce platforms containing English, Unicode-script Kannada, and Romanized Kannada."),
+    ("2","Language Filtering","Stage 1: FastText + LangDetect. Stage 2: Rule-based matcher for Kannada grammatical suffixes -ide, -alli, -inda."),
+    ("3","Human Annotation","Two annotators independently labelled each review as Positive / Negative / Neutral. Cohen's Kappa = 0.89 (Strong Agreement)."),
+    ("4","Final Dataset","10,000 reviews across electronics, clothing, food, and household categories.")
+  ] %}
+  <div style="display:flex;gap:1rem;align-items:flex-start">
+    <div style="width:26px;height:26px;flex-shrink:0;background:#1d4ed8;color:#fff;border-radius:50%;
+                display:flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:700;margin-top:2px">
+      {{num}}</div>
+    <div class="card" style="flex:1;padding:0.85rem 1.1rem">
+      <div style="font-size:0.86rem;font-weight:700;color:#0f172a;margin-bottom:0.3rem">{{title}}</div>
+      <div style="font-size:0.82rem;color:#475569;line-height:1.65">{{body}}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- DATASET STATS TABLE -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem">
+  <div class="card">
+    <div class="card-label">Dataset Statistics</div>
+    <table class="data-table">
+      <tr><th>Attribute</th><th>Value</th></tr>
+      <tr><td>Total Reviews</td><td><strong>10,000</strong></td></tr>
+      <tr><td>Classes</td><td>Positive / Negative / Neutral</td></tr>
+      <tr><td>Agreement</td><td><strong>Cohen Kappa = 0.89</strong></td></tr>
+      <tr><td>Annotators</td><td>2 primary + 1 tiebreaker</td></tr>
+      <tr><td>Detection</td><td>FastText + LangDetect</td></tr>
+      <tr><td>Markers</td><td>-ide, -alli, -inda</td></tr>
+    </table>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-title">Sentiment Distribution</div>
+    <canvas id="datasetChart" height="160"></canvas>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- NORMALIZATION -->
+<span class="section-label">Phonetic Normalization Dictionary</span>
+<div class="card" style="margin-bottom:0.75rem">
+  <div class="card-label">Why It Matters</div>
+  <p>Spelling variation was the dominant challenge. The normalization dictionary improved ML accuracy
+     by <strong>3–5 percentage points</strong>. Logistic Regression improved by <strong>+5.25 pp</strong>
+     and Naive Bayes by <strong>+4.23 pp</strong> over the FIRE 2021 baseline.</p>
+</div>
+<div style="overflow-x:auto;border-radius:8px;border:1px solid #e2e8f0">
+  <table class="data-table">
+    <thead>
+      <tr><th>Spelling Variants (Raw Input)</th><th>Canonical Form</th><th>Meaning</th></tr>
+    </thead>
+    <tbody>
+      {% for v, c, m in [
+        ("chenagide / chennagidi / chenagidey","chennagide","good / nice"),
+        ("superu / suuper / sooooper","super","super / excellent"),
+        ("swalppa / swlpa","swalpa","a little / slightly"),
+        ("bajaaru / bejaaru","bejaar","upset / bad"),
+        ("bahala / bahalla","tumba","very / a lot"),
+        ("chenaagi / chennaag","chenaagi","nicely / well"),
+        ("gottilva / gottilla","gottilla","do not know"),
+        ("maadidare / maadidhaare","maadidhaare","they did")
+      ] %}
+      <tr>
+        <td><code>{{v}}</code></td>
+        <td><strong>{{c}}</strong></td>
+        <td>{{m}}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- IMPACT ROW -->
+<div style="display:flex;gap:0.75rem;margin-top:0.75rem;flex-wrap:wrap">
+  {% for model, gain, sub in [
+    ("Logistic Regression","+5.25 pp","over FIRE 2021"),
+    ("Naive Bayes","+4.23 pp","over FIRE 2021"),
+    ("SVM","+3–5 pp","with vs. without"),
+    ("mBERT","Minimal","WordPiece handles OOV")
+  ] %}
+  <div class="card" style="flex:1;min-width:120px;text-align:center;padding:0.9rem 0.75rem">
+    <div style="font-size:0.72rem;color:#64748b;font-weight:500">{{model}}</div>
+    <div style="font-size:1.3rem;font-weight:800;color:#1d4ed8;margin:0.2rem 0">{{gain}}</div>
+    <div style="font-size:0.67rem;color:#94a3b8">{{sub}}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<hr class="divider">
+
+<!-- MODELS -->
+<span class="section-label">Model Architectures</span>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem">
+  {% for family, model, acc, body in [
+    ("Machine Learning","SVM","77.68%",
+     "<p>TF-IDF vectorization. Five classifiers trained.</p><ul><li>Logistic Regression — 77.25%</li><li><strong>SVM — 77.68%</strong></li><li>Naive Bayes — 72.23%</li><li>Random Forest — 72.55%</li><li>XGBoost — 73.32%</li></ul>"),
+    ("Deep Learning","BiLSTM","76.54%",
+     "<p>Trainable embedding layers with BiLSTM sequence modeling.</p><ul><li>CNN — 75.23%</li><li><strong>BiLSTM — 76.54%</strong></li><li>LSTM + Attention — 75.50%</li><li>GRU — 43.70%</li></ul>"),
+    ("Transformer","mBERT","78.00%",
+     "<p>bert-base-multilingual-cased fine-tuned. 3 epochs, LR 2e-5, AdamW, [CLS] classification.</p><ul><li>WordPiece tokenization handles OOV natively</li><li>Best accuracy across all families</li></ul>")
+  ] %}
+  <div class="card" style="padding:0">
+    <div style="padding:0.85rem 1.2rem;border-bottom:1px solid #f1f5f9;
+                display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:0.62rem;font-weight:700;letter-spacing:1px;
+                   text-transform:uppercase;color:#94a3b8">{{family}}</span>
+      <span style="font-size:0.82rem;font-weight:700;color:#1d4ed8">{{acc}}</span>
+    </div>
+    <div style="padding:1rem 1.2rem">
+      <div style="font-size:1rem;font-weight:700;color:#0f172a;margin-bottom:0.5rem">{{model}}</div>
+      <div style="font-size:0.82rem;color:#475569;line-height:1.65">{{body|safe}}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<hr class="divider">
+
+<!-- RESULTS -->
+<span class="section-label">Results</span>
+<div class="acc-row">
+  <div class="acc-card">
+    <div class="acc-family">Machine Learning</div>
+    <div class="acc-model">SVM</div>
+    <div class="acc-val">77.68%</div>
+    <div class="acc-sub">F1 Score: 77.37%</div>
+  </div>
+  <div class="acc-card">
+    <div class="acc-family">Deep Learning</div>
+    <div class="acc-model">BiLSTM</div>
+    <div class="acc-val">76.54%</div>
+    <div class="acc-sub">F1 Score: 74.76%</div>
+  </div>
+  <div class="acc-card best">
+    <div class="acc-family">Transformer</div>
+    <div class="acc-model">mBERT</div>
+    <div class="acc-val">78.00%</div>
+    <div class="acc-sub">Best Overall</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+  <div class="chart-wrap">
+    <div class="chart-title">All Model Accuracy</div>
+    <canvas id="accuracyChart" height="200"></canvas>
+  </div>
+  <div class="card">
+    <div class="card-label">Key Findings</div>
+    <p><strong>mBERT leads at 78.00%</strong>, but the 0.32 pp gap over SVM is narrow
+       given the significant difference in computational cost.</p>
+    <p style="margin-top:0.5rem">Preprocessing quality contributes as much to accuracy as model
+       architecture — the normalization dictionary delivered 3–5 pp gains across all families.</p>
+    <p style="margin-top:0.5rem"><strong>GRU underperformed at 43.70%</strong> due to training
+       instability on this corpus size.</p>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- TEAM -->
+<span class="section-label">Research Team</span>
+<div class="team-grid">
+  {% for init, name, usn, email, bg in [
+    ("S","Sindhu R","02JST22UCS107","sindhurgowda179@gmail.com","#1d4ed8"),
+    ("V","Vaishnavi S","02JST23UCS412","vaishnavisathyanarayan10@gmail.com","#0ea5e9"),
+    ("S","Suraj M","01JST22UCS154","surajmanju2005@gmail.com","#6366f1"),
+    ("A","Adarsh M","01JST22UCS006","adarshm0602@gmail.com","#8b5cf6")
+  ] %}
+  <div class="team-card">
+    <div class="team-avatar" style="background-color:{{ bg }}">{{init}}</div>
+    <div class="team-name">{{name}}</div>
+    <div class="team-usn">{{usn}}</div>
+    <div class="team-email">{{email}}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div style="max-width:320px;margin:0.75rem auto 0">
+  <div class="team-card guide-card">
+    <div class="team-avatar" style="background:#0f766e">A</div>
+    <div class="team-name">Prof. Anil Kumar K M</div>
+    <div class="team-usn" style="color:#0f766e;font-weight:600">Project Guide &amp; Mentor</div>
+    <div class="team-email">Dept. of CS &amp; Engineering</div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div style="margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid #e2e8f0;
+            text-align:center;font-size:0.76rem;color:#94a3b8;line-height:1.7">
+  Sentiment Analysis of Romanized Kannada Product Reviews &bull;
+  JSS S&amp;T University, Mysuru &bull; Final Year Project 2024–25
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Dataset donut
+new Chart(document.getElementById("datasetChart"), {
+  type: "doughnut",
+  data: {
+    labels: ["Positive","Negative","Neutral"],
+    datasets:[{ data:[4500,3200,2300],
+      backgroundColor:["#10b981","#ef4444","#f59e0b"],
+      borderWidth:0 }]
+  },
+  options:{
+    cutout:"60%",
+    plugins:{ legend:{ position:"bottom", labels:{ font:{size:11}, boxWidth:12 } } }
+  }
+});
+
+// Accuracy chart
+new Chart(document.getElementById("accuracyChart"), {
+  type:"bar",
+  data:{
+    labels:["LR","SVM","NB","RF","XGB","CNN","BiLSTM","LSTM+Att","mBERT"],
+    datasets:[{
+      label:"Accuracy %",
+      data:[77.25,77.68,72.23,72.55,73.32,75.23,76.54,75.50,78.00],
+      backgroundColor:["#bfdbfe","#1d4ed8","#bfdbfe","#bfdbfe","#bfdbfe",
+                        "#bae6fd","#0ea5e9","#bae6fd","#6366f1"],
+      borderRadius:4, borderWidth:0
+    }]
+  },
+  options:{
+    plugins:{ legend:{ display:false } },
+    scales:{
+      y:{ min:60, max:82, grid:{ color:"#f1f5f9" }, ticks:{ font:{size:10} } },
+      x:{ grid:{ display:false }, ticks:{ font:{size:10} } }
+    }
+  }
+});
+</script>
+{% endblock %}

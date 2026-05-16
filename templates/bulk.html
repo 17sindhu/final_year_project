@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+{% block title %}Bulk Analysis — RK Sentiment{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-title">Bulk Dataset Analysis</div>
+  <div class="page-subtitle">Upload a CSV or Excel file containing product reviews. Predict sentiment for every row and download results.</div>
+</div>
+
+<!-- STEP 1 -->
+<span class="section-label">Step 1 — Upload Dataset</span>
+<div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"
+     ondragover="event.preventDefault();this.classList.add('drag-over')"
+     ondragleave="this.classList.remove('drag-over')"
+     ondrop="handleDrop(event)">
+  <div class="upload-icon">&#8593;</div>
+  <div class="upload-title" id="uploadTitle">Drag and drop or click to upload</div>
+  <div class="upload-sub">Supports CSV (.csv) and Excel (.xlsx / .xls)</div>
+  <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFile(event)">
+</div>
+
+<!-- File info (shown after upload) -->
+<div id="fileInfo" style="display:none;margin-top:0.75rem">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <div class="card">
+      <div class="card-label">File Summary</div>
+      <div style="font-size:0.83rem;line-height:1.9;color:#475569">
+        <div style="display:flex;justify-content:space-between"><span>File</span><strong id="infoName">—</strong></div>
+        <div style="display:flex;justify-content:space-between"><span>Rows</span><strong id="infoRows">—</strong></div>
+        <div style="display:flex;justify-content:space-between"><span>Columns</span><strong id="infoCols">—</strong></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">Preview (first 3 rows)</div>
+      <div id="previewTable" style="font-size:0.78rem;overflow-x:auto"></div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- STEP 2 -->
+<span class="section-label">Step 2 — Select Review Column</span>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+  <div class="form-group" style="margin:0">
+    <label class="form-label">Column containing reviews</label>
+    <select id="colSelect" class="form-control">
+      <option value="">— Upload a file first —</option>
+    </select>
+    <div id="autoDetectMsg" style="font-size:0.75rem;color:#64748b;margin-top:4px"></div>
+  </div>
+  <div class="form-group" style="margin:0">
+    <label class="form-label">Select Model</label>
+    <select id="modelSelect" class="form-control" onchange="updateModelBadge()">
+      <option value="SVM">SVM — Machine Learning</option>
+      <option value="BiLSTM">BiLSTM — Deep Learning</option>
+      <option value="mBERT">mBERT — Transformer</option>
+    </select>
+    <div class="model-info-card" style="margin-top:0.4rem">
+      <div class="model-info-meta">
+        <span class="meta-pill" id="mAcc">Accuracy: 77.68%</span>
+        <span class="meta-pill" id="mSpeed">Speed: Fast</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- STEP 3 -->
+<span class="section-label">Step 3 — Analyze</span>
+<button class="btn btn-primary" id="analyzeBtn" onclick="runAnalysis()" style="min-width:160px">
+  Analyze Dataset
+</button>
+
+<!-- Progress -->
+<div id="progressWrap" style="display:none;margin-top:1rem">
+  <div style="font-size:0.8rem;color:#64748b;margin-bottom:0.4rem" id="progressText">Processing...</div>
+  <div class="progress-wrap"><div class="progress-bar" id="progressBar" style="width:0%"></div></div>
+</div>
+
+<hr class="divider">
+
+<!-- RESULTS (hidden until analysis) -->
+<div id="resultsSection" style="display:none">
+
+  <!-- Verdict -->
+  <div class="verdict-banner" id="verdictBanner">
+    <div class="verdict-label">Product Verdict</div>
+    <div class="verdict-status" id="verdictStatus">—</div>
+    <div class="verdict-sub" id="verdictSub">—</div>
+  </div>
+
+  <!-- Summary stats -->
+  <div class="sum-grid" id="summaryGrid"></div>
+
+  <!-- Charts -->
+  <span class="section-label">Visualizations</span>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1rem">
+    <div class="chart-wrap">
+      <div class="chart-title">Sentiment Distribution</div>
+      <canvas id="pieChart" height="200"></canvas>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Review Counts</div>
+      <canvas id="barChart" height="200"></canvas>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Positive vs Negative</div>
+      <canvas id="compareChart" height="200"></canvas>
+    </div>
+  </div>
+
+  <!-- Result preview table -->
+  <span class="section-label">Preview Results (first 10 rows)</span>
+  <div class="preview-table-wrap">
+    <table class="data-table" id="previewResultTable">
+      <thead><tr><th>Review</th><th>Sentiment</th><th>Confidence</th></tr></thead>
+      <tbody id="previewResultBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Downloads -->
+  <span class="section-label">Download Results</span>
+  <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
+    <button class="btn btn-secondary" id="dlCSV" onclick="downloadResult('csv')">Download CSV</button>
+    <button class="btn btn-secondary" id="dlReport" onclick="downloadResult('report')">Download Report</button>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let uploadedFile = null;
+let analysisResult = null;
+let pieChartInst = null, barChartInst = null, compareChartInst = null;
+
+const HINTS = ["review","text","comment","feedback","description","opinion","content","message","review_text"];
+
+// ── File handling ─────────────────────────────────────────────────────────────
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById("uploadZone").classList.remove("drag-over");
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (file) processFile(file);
+}
+
+function processFile(file) {
+  uploadedFile = file;
+  document.getElementById("uploadTitle").textContent = file.name;
+  document.getElementById("fileInfo").style.display = "block";
+  document.getElementById("infoName").textContent   = file.name;
+
+  // Parse CSV in browser for column detection + preview
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    if (file.name.endsWith(".csv")) {
+      parseCSVPreview(e.target.result);
+    } else {
+      // For Excel, we can't parse in browser easily — just show file name
+      document.getElementById("infoRows").textContent = "Upload and analyze to see";
+      document.getElementById("infoCols").textContent = "—";
+      document.getElementById("previewTable").innerHTML = "<em style='font-size:0.76rem;color:#94a3b8'>Preview available after analysis</em>";
+      // Populate column select with a generic option
+      const sel = document.getElementById("colSelect");
+      sel.innerHTML = "<option value=''>— Auto-detect on analysis —</option>";
+    }
+  };
+  if (file.name.endsWith(".csv")) {
+    reader.readAsText(file);
+  } else {
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+function parseCSVPreview(text) {
+  const lines   = text.trim().split("\n");
+  const headers = lines[0].split(",").map(h => h.replace(/"/g,"").trim());
+  const rows    = lines.slice(1, 4).map(l => l.split(",").map(c => c.replace(/"/g,"").trim()));
+
+  document.getElementById("infoRows").textContent = (lines.length - 1).toLocaleString();
+  document.getElementById("infoCols").textContent = headers.length;
+
+  // Preview table
+  let html = "<table class='data-table'><thead><tr>" +
+    headers.map(h => `<th>${h}</th>`).join("") + "</tr></thead><tbody>";
+  rows.forEach(r => {
+    html += "<tr>" + headers.map((_,i) =>
+      `<td>${(r[i]||"").substring(0,30)}${(r[i]||"").length>30?"…":""}</td>`).join("") + "</tr>";
+  });
+  html += "</tbody></table>";
+  document.getElementById("previewTable").innerHTML = html;
+
+  // Populate column select
+  const sel = document.getElementById("colSelect");
+  sel.innerHTML = "";
+  let autoIdx = -1;
+  headers.forEach((h, i) => {
+    const opt = document.createElement("option");
+    opt.value = h; opt.textContent = h;
+    sel.appendChild(opt);
+    if (HINTS.includes(h.toLowerCase()) && autoIdx === -1) autoIdx = i;
+  });
+  if (autoIdx >= 0) {
+    sel.selectedIndex = autoIdx;
+    document.getElementById("autoDetectMsg").textContent = `Auto-detected: "${headers[autoIdx]}"`;
+  }
+}
+
+// ── Model badge ───────────────────────────────────────────────────────────────
+const MODEL_META = {
+  SVM:    { acc:"77.68%", speed:"Fast" },
+  BiLSTM: { acc:"76.54%", speed:"Medium" },
+  mBERT:  { acc:"78.00%", speed:"Slower" },
+};
+function updateModelBadge() {
+  const m = MODEL_META[document.getElementById("modelSelect").value];
+  document.getElementById("mAcc").textContent   = "Accuracy: " + m.acc;
+  document.getElementById("mSpeed").textContent = "Speed: " + m.speed;
+}
+
+// ── Run analysis ──────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  if (!uploadedFile) { showToast("Please upload a file first.", "error"); return; }
+
+  const col   = document.getElementById("colSelect").value;
+  const model = document.getElementById("modelSelect").value;
+
+  const btn = document.getElementById("analyzeBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Analysing...';
+
+  document.getElementById("progressWrap").style.display = "block";
+  animateProgress();
+
+  const form = new FormData();
+  form.append("file",   uploadedFile);
+  form.append("model",  model);
+  form.append("column", col);
+
+  try {
+    const res  = await fetch("/api/bulk", { method:"POST", body:form });
+    const data = await res.json();
+    if (data.error) { showToast(data.error, "error"); return; }
+
+    analysisResult = data;
+    renderResults(data);
+    showToast("Analysis complete!", "success");
+  } catch(e) {
+    showToast("Error: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = "Analyze Dataset";
+    document.getElementById("progressBar").style.width = "100%";
+    setTimeout(() => {
+      document.getElementById("progressWrap").style.display = "none";
+      document.getElementById("progressBar").style.width = "0%";
+    }, 800);
+  }
+}
+
+let _progInt = null;
+function animateProgress() {
+  let w = 0;
+  clearInterval(_progInt);
+  _progInt = setInterval(() => {
+    w = Math.min(w + Math.random() * 8, 88);
+    document.getElementById("progressBar").style.width = w + "%";
+    document.getElementById("progressText").textContent = `Analysing... ${Math.round(w)}%`;
+  }, 300);
+  setTimeout(() => clearInterval(_progInt), 15000);
+}
+
+// ── Render results ────────────────────────────────────────────────────────────
+function renderResults(d) {
+  document.getElementById("resultsSection").style.display = "block";
+  document.getElementById("resultsSection").scrollIntoView({ behavior:"smooth" });
+
+  // Verdict
+  const vc = d.verdict === "GOOD PRODUCT" ? "#10b981"
+           : d.verdict === "BAD PRODUCT"  ? "#ef4444" : "#f59e0b";
+  const vb = document.getElementById("verdictBanner");
+  vb.style.borderColor = vc + "40";
+  vb.style.background  = vc + "0a";
+  document.getElementById("verdictStatus").textContent = d.verdict;
+  document.getElementById("verdictStatus").style.color = vc;
+  document.getElementById("verdictSub").textContent =
+    `${d.total} reviews  •  Model: ${d.model}  •  Positive: ${d.pos_pct}%  Negative: ${d.neg_pct}%`;
+
+  // Stats
+  const sg = document.getElementById("summaryGrid");
+  sg.innerHTML = [
+    [d.total,       "Total Reviews"],
+    [d.pos,         "Positive"],
+    [d.neg,         "Negative"],
+    [d.neu,         "Neutral"],
+    [d.pos_pct+"%", "Positive Rate"],
+    [d.neg_pct+"%", "Negative Rate"],
+  ].map(([v,l]) => `<div class="stat-card"><div class="stat-val">${v}</div><div class="stat-lbl">${l}</div></div>`).join("");
+
+  // Charts
+  if (pieChartInst)     pieChartInst.destroy();
+  if (barChartInst)     barChartInst.destroy();
+  if (compareChartInst) compareChartInst.destroy();
+
+  pieChartInst = new Chart(document.getElementById("pieChart"), {
+    type:"doughnut",
+    data:{ labels:["Positive","Negative","Neutral"],
+      datasets:[{ data:[d.pos,d.neg,d.neu],
+        backgroundColor:["#10b981","#ef4444","#f59e0b"], borderWidth:0 }] },
+    options:{ cutout:"60%", plugins:{ legend:{ position:"bottom", labels:{font:{size:10},boxWidth:10} } } }
+  });
+
+  barChartInst = new Chart(document.getElementById("barChart"), {
+    type:"bar",
+    data:{ labels:["Positive","Negative","Neutral"],
+      datasets:[{ data:[d.pos,d.neg,d.neu],
+        backgroundColor:["#10b981","#ef4444","#f59e0b"],
+        borderRadius:4, borderWidth:0 }] },
+    options:{ plugins:{legend:{display:false}},
+      scales:{ y:{ grid:{color:"#f1f5f9"} }, x:{ grid:{display:false} } } }
+  });
+
+  compareChartInst = new Chart(document.getElementById("compareChart"), {
+    type:"bar",
+    data:{ labels:["Positive","Negative"],
+      datasets:[{ data:[d.pos_pct, d.neg_pct],
+        backgroundColor:["#10b981","#ef4444"], borderRadius:4, borderWidth:0 }] },
+    options:{ plugins:{legend:{display:false}},
+      scales:{ y:{ max:100, title:{display:true,text:"%"}, grid:{color:"#f1f5f9"} },
+               x:{ grid:{display:false} } } }
+  });
+
+  // Preview table
+  const tbody = document.getElementById("previewResultBody");
+  tbody.innerHTML = "";
+  (d.preview || []).forEach(row => {
+    const label = row["Predicted Sentiment"];
+    const cls   = label === "Positive" ? "badge-pos" : label === "Negative" ? "badge-neg" : "badge-neu";
+    const rev   = row[d.col_used] || Object.values(row)[0] || "";
+    tbody.innerHTML += `<tr>
+      <td>${String(rev).substring(0,80)}${String(rev).length>80?"…":""}</td>
+      <td><span class="badge ${cls}">${label}</span></td>
+      <td>${row["Confidence (%)"] || "—"}%</td>
+    </tr>`;
+  });
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+function downloadResult(type) {
+  if (!analysisResult) return;
+  const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"_");
+  if (type === "csv") {
+    downloadCSV(analysisResult.csv, `analyzed_reviews_${ts}.csv`);
+  } else {
+    downloadText(analysisResult.report, `summary_report_${ts}.txt`);
+  }
+}
+</script>
+{% endblock %}

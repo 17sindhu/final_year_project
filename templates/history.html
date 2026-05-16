@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Prediction History — RK Sentiment{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-title">Prediction History</div>
+  <div class="page-subtitle">All predictions stored in SQLite. Browse, filter, and export.</div>
+</div>
+
+<!-- STATS -->
+<div class="stat-grid">
+  <div class="stat-card"><div class="stat-val">{{ stats.total }}</div><div class="stat-lbl">Total Predictions</div></div>
+  <div class="stat-card"><div class="stat-val" style="color:#10b981">{{ stats.by_label.get('Positive',0) }}</div><div class="stat-lbl">Positive</div></div>
+  <div class="stat-card"><div class="stat-val" style="color:#ef4444">{{ stats.by_label.get('Negative',0) }}</div><div class="stat-lbl">Negative</div></div>
+  <div class="stat-card"><div class="stat-val" style="color:#f59e0b">{{ stats.by_label.get('Neutral',0) }}</div><div class="stat-lbl">Neutral</div></div>
+  <div class="stat-card"><div class="stat-val">{{ stats.avg_conf }}%</div><div class="stat-lbl">Avg Confidence</div></div>
+  <div class="stat-card">
+    <div class="stat-val">
+      {% if stats.total > 0 %}
+        {{ ((stats.by_label.get('Positive',0) / stats.total) * 100) | round(1) }}%
+      {% else %}0%{% endif %}
+    </div>
+    <div class="stat-lbl">Positive Rate</div>
+  </div>
+</div>
+
+{% if stats.total == 0 %}
+<div class="placeholder">
+  <div class="placeholder-icon">&#9675;</div>
+  <div class="placeholder-text">No predictions yet. Go to Sentiment Analyzer to make a prediction.</div>
+</div>
+{% else %}
+
+<hr class="divider">
+
+<!-- CHARTS -->
+<span class="section-label">Analytics</span>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1rem">
+  <div class="chart-wrap">
+    <div class="chart-title">Sentiment Distribution</div>
+    <canvas id="pieChart" height="220"></canvas>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-title">Predictions by Model</div>
+    <canvas id="modelChart" height="220"></canvas>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-title">Keyword vs Model Predictions</div>
+    <canvas id="methodChart" height="220"></canvas>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- FILTERS -->
+<span class="section-label">Browse Records</span>
+<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem;margin-bottom:1rem">
+  <input type="text" id="filterSearch" class="form-control"
+         placeholder="Search reviews..." oninput="applyFilters()">
+  <select id="filterLabel" class="form-control" onchange="applyFilters()">
+    <option value="">All Sentiments</option>
+    <option>Positive</option><option>Negative</option><option>Neutral</option>
+  </select>
+  <select id="filterModel" class="form-control" onchange="applyFilters()">
+    <option value="">All Models</option>
+    <option>SVM</option><option>BiLSTM</option><option>mBERT</option>
+  </select>
+  <select id="filterConf" class="form-control" onchange="applyFilters()">
+    <option value="">Any Confidence</option>
+    <option value="70">Above 70%</option>
+    <option value="80">Above 80%</option>
+    <option value="90">Above 90%</option>
+  </select>
+</div>
+
+<div id="recordCount" style="font-size:0.78rem;color:#94a3b8;margin-bottom:0.75rem"></div>
+
+<!-- RECORDS -->
+<div id="recordsList"></div>
+
+<!-- PAGINATION -->
+<div id="pagination" style="display:flex;gap:0.5rem;align-items:center;margin-top:1rem;flex-wrap:wrap"></div>
+
+<hr class="divider">
+
+<!-- EXPORT & MANAGE -->
+<span class="section-label">Export &amp; Manage</span>
+<div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
+  <a href="/api/history/export" class="btn btn-secondary">Download CSV</a>
+  <button class="btn btn-danger" onclick="confirmClear()">Clear All Records</button>
+</div>
+
+<!-- DB Info -->
+<div class="card" style="margin-top:1rem">
+  <div class="card-label">Database Information</div>
+  <table class="data-table">
+    <tr><th>Attribute</th><th>Value</th></tr>
+    <tr><td>Engine</td><td>SQLite 3 (WAL mode)</td></tr>
+    <tr><td>Total Records</td><td>{{ stats.total }}</td></tr>
+    <tr><td>Schema</td><td><code>id, timestamp, raw_text, clean_text, model, method, label, confidence, tokens</code></td></tr>
+  </table>
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{% if stats.total > 0 %}
+<script>
+// Raw rows from server
+const ALL_ROWS = {{ rows | tojson }};
+const BY_LABEL = {{ stats.by_label | tojson }};
+const BY_MODEL = {{ stats.by_model | tojson }};
+const BY_METHOD= {{ stats.by_method | tojson }};
+
+const PAGE_SIZE = 12;
+let filteredRows = [...ALL_ROWS];
+let currentPage  = 1;
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+new Chart(document.getElementById("pieChart"), {
+  type:"doughnut",
+  data:{ labels:Object.keys(BY_LABEL), datasets:[{
+    data:Object.values(BY_LABEL),
+    backgroundColor:["#10b981","#ef4444","#f59e0b"], borderWidth:0
+  }] },
+  options:{ cutout:"58%", plugins:{ legend:{ position:"bottom", labels:{font:{size:10},boxWidth:10} } } }
+});
+
+new Chart(document.getElementById("modelChart"), {
+  type:"bar",
+  data:{ labels:Object.keys(BY_MODEL),
+    datasets:[{ data:Object.values(BY_MODEL).map(m=>m.count),
+      backgroundColor:["#1d4ed8","#0ea5e9","#6366f1"],
+      borderRadius:4, borderWidth:0 }] },
+  options:{ plugins:{legend:{display:false}},
+    scales:{ y:{grid:{color:"#f1f5f9"},ticks:{font:{size:10}}},
+             x:{grid:{display:false},ticks:{font:{size:10}}} } }
+});
+
+new Chart(document.getElementById("methodChart"), {
+  type:"bar",
+  data:{ labels:Object.keys(BY_METHOD),
+    datasets:[{ data:Object.values(BY_METHOD),
+      backgroundColor:["#6366f1","#10b981"],
+      borderRadius:4, borderWidth:0 }] },
+  options:{ plugins:{legend:{display:false}},
+    scales:{ y:{grid:{color:"#f1f5f9"},ticks:{font:{size:10}}},
+             x:{grid:{display:false},ticks:{font:{size:10}}} } }
+});
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+function applyFilters() {
+  const search = document.getElementById("filterSearch").value.toLowerCase();
+  const label  = document.getElementById("filterLabel").value;
+  const model  = document.getElementById("filterModel").value;
+  const conf   = parseFloat(document.getElementById("filterConf").value) || 0;
+
+  filteredRows = ALL_ROWS.filter(r => {
+    if (search && !r.raw_text.toLowerCase().includes(search) &&
+                  !r.clean_text.toLowerCase().includes(search)) return false;
+    if (label  && r.label  !== label)  return false;
+    if (model  && r.model  !== model)  return false;
+    if (conf   && r.confidence * 100 < conf) return false;
+    return true;
+  });
+  currentPage = 1;
+  renderPage();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderPage() {
+  const total  = filteredRows.length;
+  const pages  = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  currentPage  = Math.min(currentPage, pages);
+  const start  = (currentPage - 1) * PAGE_SIZE;
+  const chunk  = filteredRows.slice(start, start + PAGE_SIZE);
+
+  document.getElementById("recordCount").textContent =
+    `Showing ${chunk.length} of ${total} records`;
+
+  const list = document.getElementById("recordsList");
+  list.innerHTML = chunk.map(r => {
+    const col = sentimentColor(r.label);
+    const cls = r.label === "Positive" ? "badge-pos" : r.label === "Negative" ? "badge-neg" : "badge-neu";
+    const conf = (r.confidence * 100).toFixed(1);
+    const txt  = r.raw_text.length > 160 ? r.raw_text.substring(0,160)+"…" : r.raw_text;
+    const nrm  = r.clean_text.length > 110 ? r.clean_text.substring(0,110)+"…" : r.clean_text;
+    return `
+    <div class="hist-row" style="border-left-color:${col}">
+      <div class="hist-meta">
+        <span class="hist-id">#${r.id}</span>
+        <span class="hist-ts">${r.timestamp}</span>
+        <span class="hist-model-tag">${r.model}</span>
+      </div>
+      <div class="hist-text">${txt}</div>
+      <div class="hist-norm">Normalized: ${nrm}</div>
+      <div class="hist-bottom">
+        <span class="hist-lbl" style="background:${col}">${r.label}</span>
+        <span class="hist-conf">${conf}%</span>
+        <button class="btn btn-danger btn-sm" style="margin-left:auto"
+                onclick="deleteRecord(${r.id})">Delete</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  // Pagination
+  const pg = document.getElementById("pagination");
+  pg.innerHTML = "";
+  if (pages <= 1) return;
+
+  const mkBtn = (lbl, page, disabled=false, active=false) => {
+    const b = document.createElement("button");
+    b.textContent = lbl;
+    b.className = "btn btn-sm " + (active ? "btn-primary" : "btn-secondary");
+    b.disabled = disabled;
+    b.onclick = () => { currentPage = page; renderPage(); };
+    pg.appendChild(b);
+  };
+
+  mkBtn("Prev", currentPage-1, currentPage===1);
+  for (let i=1; i<=pages; i++) {
+    if (i===1 || i===pages || Math.abs(i-currentPage)<=1)
+      mkBtn(i, i, false, i===currentPage);
+    else if (Math.abs(i-currentPage)===2) {
+      const s = document.createElement("span");
+      s.textContent="…"; s.style.padding="0 4px; color:#94a3b8";
+      pg.appendChild(s);
+    }
+  }
+  mkBtn("Next", currentPage+1, currentPage===pages);
+}
+
+// ── Delete / Clear ────────────────────────────────────────────────────────────
+async function deleteRecord(id) {
+  if (!confirm("Delete this record?")) return;
+  await fetch(`/api/history/delete/${id}`, { method:"DELETE" });
+  const idx = ALL_ROWS.findIndex(r=>r.id===id);
+  if (idx>=0) ALL_ROWS.splice(idx,1);
+  applyFilters();
+  showToast("Record deleted.");
+}
+
+async function confirmClear() {
+  if (!confirm("Delete ALL prediction records? This cannot be undone.")) return;
+  await fetch("/api/history/clear", { method:"POST" });
+  showToast("All records cleared.");
+  setTimeout(() => location.reload(), 800);
+}
+
+// Init
+applyFilters();
+</script>
+{% endif %}
+{% endblock %}
