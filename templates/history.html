@@ -55,7 +55,7 @@
 
 <!-- FILTERS -->
 <span class="section-label">Browse Records</span>
-<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:0.75rem;margin-bottom:1rem">
+<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:0.75rem;margin-bottom:1rem">
   <input type="text" id="filterSearch" class="form-control"
          placeholder="Search reviews..." oninput="applyFilters()">
   <select id="filterLabel" class="form-control" onchange="applyFilters()">
@@ -65,6 +65,11 @@
   <select id="filterModel" class="form-control" onchange="applyFilters()">
     <option value="">All Models</option>
     <option>SVM</option><option>BiLSTM</option><option>mBERT</option>
+  </select>
+  <select id="filterSource" class="form-control" onchange="applyFilters()">
+    <option value="">All Sources</option>
+    <option value="single">Single Input</option>
+    <option value="bulk">Bulk Analysis</option>
   </select>
   <select id="filterConf" class="form-control" onchange="applyFilters()">
     <option value="">Any Confidence</option>
@@ -153,16 +158,19 @@ new Chart(document.getElementById("methodChart"), {
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 function applyFilters() {
-  const search = document.getElementById("filterSearch").value.toLowerCase();
-  const label  = document.getElementById("filterLabel").value;
-  const model  = document.getElementById("filterModel").value;
-  const conf   = parseFloat(document.getElementById("filterConf").value) || 0;
+  const search  = document.getElementById("filterSearch").value.toLowerCase();
+  const label   = document.getElementById("filterLabel").value;
+  const model   = document.getElementById("filterModel").value;
+  const source  = document.getElementById("filterSource").value;
+  const conf    = parseFloat(document.getElementById("filterConf").value) || 0;
 
   filteredRows = ALL_ROWS.filter(r => {
     if (search && !r.raw_text.toLowerCase().includes(search) &&
                   !r.clean_text.toLowerCase().includes(search)) return false;
     if (label  && r.label  !== label)  return false;
     if (model  && r.model  !== model)  return false;
+    if (source === "single" && r.method.startsWith("bulk")) return false;
+    if (source === "bulk"   && !r.method.startsWith("bulk")) return false;
     if (conf   && r.confidence * 100 < conf) return false;
     return true;
   });
@@ -188,12 +196,18 @@ function renderPage() {
     const conf = (r.confidence * 100).toFixed(1);
     const txt  = r.raw_text.length > 160 ? r.raw_text.substring(0,160)+"…" : r.raw_text;
     const nrm  = r.clean_text.length > 110 ? r.clean_text.substring(0,110)+"…" : r.clean_text;
+    const isBulk   = r.method && r.method.startsWith("bulk");
+    const srcLabel = isBulk ? "Bulk" : "Single";
+    const srcColor = isBulk ? "#6366f1" : "#0ea5e9";
+    const srcBg    = isBulk ? "#ede9fe" : "#e0f2fe";
     return `
     <div class="hist-row" style="border-left-color:${col}">
       <div class="hist-meta">
         <span class="hist-id">#${r.id}</span>
         <span class="hist-ts">${r.timestamp}</span>
         <span class="hist-model-tag">${r.model}</span>
+        <span style="background:${srcBg};color:${srcColor};border-radius:4px;
+                     padding:1px 7px;font-size:0.69rem;font-weight:600">${srcLabel}</span>
       </div>
       <div class="hist-text">${txt}</div>
       <div class="hist-norm">Normalized: ${nrm}</div>
