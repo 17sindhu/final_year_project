@@ -1,11 +1,9 @@
-"""
-app.py — Flask backend for RK Sentiment Analysis
-"""
+# app.py
 
 import warnings
 warnings.filterwarnings("ignore")
 
-import download_models  # Auto-download models
+import download_models
 
 import os
 import sys
@@ -24,10 +22,6 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-# ─────────────────────────────────────────────────────────────
-# Imports
-# ─────────────────────────────────────────────────────────────
-
 from utils.preprocessing import (
     load_normalization_dict,
     preprocess
@@ -35,10 +29,8 @@ from utils.preprocessing import (
 
 from utils.model_loader import (
     load_svm,
-    load_bilstm,
     load_mbert,
     predict_svm,
-    predict_bilstm,
     predict_mbert,
 )
 
@@ -61,16 +53,14 @@ from utils.database import (
     export_csv,
 )
 
-# ─────────────────────────────────────────────────────────────
-# Flask
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 app = Flask(__name__)
 app.secret_key = "rk_sentiment_secret"
 
-# ─────────────────────────────────────────────────────────────
-# Init
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# Startup
+# ─────────────────────────────────────────────
 
 init_db()
 
@@ -82,15 +72,13 @@ print("[INFO] Loading models...")
 
 _svm_model, _svm_vec = load_svm()
 
-_bilstm_model, _bilstm_tok = load_bilstm()
-
 _mbert_model, _mbert_tok = load_mbert()
 
 print("[INFO] Models loaded successfully")
 
-# ─────────────────────────────────────────────────────────────
-# Routes
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# Pages
+# ─────────────────────────────────────────────
 
 @app.route("/")
 def index():
@@ -124,31 +112,26 @@ def insights():
     return render_template("insights.html")
 
 
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # Helpers
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 def run_model(clean, model_name):
 
-    if model_name == "SVM":
-        return predict_svm(
-            clean,
-            _svm_model,
-            _svm_vec
-        )
+    if model_name == "mBERT":
 
-    elif model_name == "BiLSTM":
-        return predict_bilstm(
-            clean,
-            _bilstm_model,
-            _bilstm_tok
-        )
-
-    else:
         return predict_mbert(
             clean,
             _mbert_model,
             _mbert_tok
+        )
+
+    else:
+
+        return predict_svm(
+            clean,
+            _svm_model,
+            _svm_vec
         )
 
 
@@ -176,7 +159,10 @@ def smart_predict(clean, model_name):
 
     else:
 
-        label, conf, proba = run_model(clean, model_name)
+        label, conf, proba = run_model(
+            clean,
+            model_name
+        )
 
         return label, conf, proba, "model"
 
@@ -221,9 +207,9 @@ def detect_review_column(df):
     return None
 
 
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # API — Single Prediction
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
@@ -235,11 +221,15 @@ def api_predict():
     model = (data.get("model") or "SVM").strip()
 
     if not text:
+
         return jsonify({
             "error": "No text provided"
         }), 400
 
-    clean, tokens = preprocess(text, norm_dict)
+    clean, tokens = preprocess(
+        text,
+        norm_dict
+    )
 
     label, conf, proba, method = smart_predict(
         clean,
@@ -284,9 +274,9 @@ def api_predict():
     })
 
 
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # API — Bulk Prediction
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 @app.route("/api/bulk", methods=["POST"])
 def api_bulk():
@@ -298,6 +288,7 @@ def api_bulk():
     column = request.form.get("column", "")
 
     if not file:
+
         return jsonify({
             "error": "No file uploaded"
         }), 400
@@ -305,9 +296,11 @@ def api_bulk():
     try:
 
         if file.filename.endswith(".csv"):
+
             df = pd.read_csv(file)
 
         else:
+
             df = pd.read_excel(file)
 
     except Exception as e:
@@ -317,14 +310,17 @@ def api_bulk():
         }), 400
 
     if df.empty:
+
         return jsonify({
             "error": "Empty file"
         }), 400
 
     if not column or column not in df.columns:
+
         column = detect_review_column(df)
 
     if not column:
+
         return jsonify({
             "error": "Review column not found"
         }), 400
@@ -430,9 +426,9 @@ def api_bulk():
     })
 
 
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 # API — History
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 @app.route("/api/history")
 def api_history():
@@ -478,7 +474,7 @@ def api_export():
     )
 
 
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────
 
 if __name__ == "__main__":
 
